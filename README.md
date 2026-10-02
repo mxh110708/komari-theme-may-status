@@ -63,7 +63,7 @@ MXH Status 延续毛玻璃界面，在此基础上完善中文文案、后台外
 使用 Bun，项目固定工具版本为 `1.3.14`；Node.js 要求 `^20.19.0` 或 `>=22.12.0`。
 
 ```bash
-bun install --no-save
+bun install --frozen-lockfile
 bun run dev
 ```
 
@@ -72,9 +72,17 @@ bun run dev
 ```bash
 bun run lint
 bun run build
+bun run check:package
+bun run test:package
 ```
 
 构建输出为 `dist/` 和 `komari-theme-mxh-status-build-<commit>.zip`。生产预览可使用 `bun run preview`。
+
+构建必须包含 `public/registerSW.js` 与 `public/sw.js` 的原始字节：它们停止旧 PWA 导航兜底把 `/admin` 错误导向公开主题，Worker 不拦截网络请求。更新既有浏览器 Worker 取决于浏览器更新周期；本项目不强制刷新或清理用户缓存。`check:package` 检查版本、主题身份、必需资源和网络模式行为，不代表完整浏览器验收。
+
+`build-ci.yml` 对推送／PR 在 Windows 与 Linux 校验固定锁文件、lint 和构建；`release-on-version-bump.yml` 只在 `main` 版本改变时发行。维护修订不冒充新发行，不覆盖已有附件；发布新包需要新的版本号。
+
+本轮依赖、PWA 纳管与正式附件差异说明见 [维护验证记录](docs/MAINTENANCE-2026-10-02.zh-CN.md)。
 
 技术栈：Vue 3、Vite、Pinia、reka-ui、Tailwind CSS v4、ECharts，以及 globe.gl／Three.js／COBE 地图组件。
 

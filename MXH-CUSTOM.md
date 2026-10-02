@@ -107,9 +107,11 @@ history continues to refresh once per minute through shared requests.
 ## Build
 
 ```powershell
-bun install --no-save
+bun install --frozen-lockfile
 bun run lint
 bun run build
+bun run check:package
+bun run test:package
 ```
 
 The build produces `komari-theme-mxh-status-build-<commit>.zip` for import in
@@ -132,3 +134,18 @@ idempotent and rejects an unrecognized frontend before any live files change.
 
 This repository must not contain Komari databases, backups, administrator
 credentials, Cloudflare Tunnel tokens, VPS archives, or private keys.
+
+## Network-only PWA and build contract
+
+The user-confirmed `public/registerSW.js` and `public/sw.js` are source inputs,
+not disposable deployment leftovers. Registration is disabled; the replacement
+worker only skips waiting and claims clients, without intercepting fetches.
+This keeps `/admin` navigation on the server after existing workers update.
+No forced browser refresh, cache deletion, or production installation is part
+of a source build.
+
+The ZIP plugin rejects missing required inputs or mismatched PWA copies.
+`scripts/check-package.mjs` checks the lifecycle, identity, version, preview and
+built resource bytes. It is a packaging smoke check, not a general test suite.
+Build CI uses the frozen Bun lockfile on Windows and Linux; release automation
+uses the same install/build contract and does not overwrite existing assets.

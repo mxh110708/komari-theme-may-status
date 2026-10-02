@@ -49,8 +49,18 @@ function komariThemeZip(): Plugin {
         : 'preview.png'
 
       if (!existsSync(distDir)) {
-        console.log('[komari-theme-zip] dist directory not found, skipping zip creation')
-        return
+        throw new Error('[komari-theme-zip] dist directory not found')
+      }
+
+      for (const input of [themeJsonPath, previewPath, resolve(distDir, 'index.html')]) {
+        if (!existsSync(input))
+          throw new Error(`[komari-theme-zip] Required packaging input missing: ${input}`)
+      }
+      for (const name of ['registerSW.js', 'sw.js']) {
+        const source = resolve(__dirname, 'public', name)
+        const built = resolve(distDir, name)
+        if (!existsSync(source) || !existsSync(built) || !fs.readFileSync(source).equals(fs.readFileSync(built)))
+          throw new Error(`[komari-theme-zip] Network-only PWA resource missing or changed: ${name}`)
       }
 
       const output = fs.createWriteStream(outputPath)
