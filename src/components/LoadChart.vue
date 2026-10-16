@@ -353,6 +353,7 @@ const cpuChartOption = computed(() => ({
   color: [chartColors.primary, chartColors.secondary],
   tooltip: {
     ...baseTooltipConfig.value,
+    confine: true,
     axisPointer: { ...baseTooltipConfig.value.axisPointer, type: 'line' as const },
     formatter: (params: unknown) => {
       const p = params as Array<{ dataIndex: number, seriesName: string, value: number | null, color: string }>
