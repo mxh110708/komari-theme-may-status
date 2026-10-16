@@ -61,6 +61,11 @@ backup_path="${BACKUP_ROOT}/komari-before-theme-${stamp}.tar.gz"
 db_snapshot="${BACKUP_ROOT}/komari-before-theme-${stamp}.db"
 old_theme_backup="${BACKUP_ROOT}/${THEME_SHORT}-before-${stamp}"
 mutation_started=0
+service_stopped=0
+theme_existed=0
+if [ -e "$THEME_DIR" ]; then
+  theme_existed=1
+fi
 committed=0
 
 cleanup() {
@@ -69,19 +74,23 @@ cleanup() {
 
   if [ "$committed" -ne 1 ] && [ "$mutation_started" -eq 1 ]; then
     systemctl stop komari.service >/dev/null 2>&1 || true
-    if [ -e "$THEME_DIR" ]; then
-      rm -rf -- "$THEME_DIR"
-    fi
     if [ -d "$old_theme_backup" ]; then
+      if [ -e "$THEME_DIR" ]; then
+        rm -rf -- "$THEME_DIR"
+      fi
       install -d -o komari -g komari -m 0755 "$THEME_ROOT"
       mv "$old_theme_backup" "$THEME_DIR"
+    elif [ "$theme_existed" -eq 0 ] && [ -e "$THEME_DIR" ]; then
+      rm -rf -- "$THEME_DIR"
     fi
     if [ -f "$db_snapshot" ]; then
       cp -a "$db_snapshot" "$DB_PATH"
       chown komari:komari "$DB_PATH"
     fi
-    systemctl start komari.service >/dev/null 2>&1 || true
     echo "ROLLBACK=attempted" >&2
+  fi
+  if [ "$committed" -ne 1 ] && [ "$service_stopped" -eq 1 ]; then
+    systemctl start komari.service >/dev/null 2>&1 || true
   fi
 
   if [ -n "$stage_dir" ] && [ -d "$stage_dir" ]; then
@@ -249,9 +258,10 @@ print('MANAGED_TITLE_PREPARED=ok')
 PY
 
 systemctl stop komari.service
-mutation_started=1
+service_stopped=1
 tar -C /var/lib/komari -czf "$backup_path" data
 cp -a "$DB_PATH" "$db_snapshot"
+mutation_started=1
 
 if [ -e "$THEME_DIR" ]; then
   mv "$THEME_DIR" "$old_theme_backup"
