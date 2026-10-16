@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PingLossMetricsResponse, PingRecord } from '@/utils/rpc'
 import { Icon } from '@iconify/vue'
 import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
@@ -9,7 +10,9 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppStore } from '@/stores/app'
-import { getCompatiblePingRecords } from '@/utils/compat'
+import { getCompatiblePingLossMetrics, getCompatiblePingRecords } from '@/utils/compat'
+import { isValidLatencySample } from '@/utils/latencyRating'
+import { buildPingLossWindows, buildPingMetricLossWindows, getPingLossWindowMs, getPingMetricLossWindowMs } from '@/utils/pingChartHelper'
 import { cutPeakValues, interpolateNullsLinear } from '@/utils/recordHelper'
 import '@/utils/echarts' // 共享 ECharts 配置
 
@@ -43,6 +46,7 @@ const chartColors = [
   '#34D399', // 翠绿色
   '#FB923C', // 橙色
 ]
+const TOOLTIP_ESCAPE_PATTERN = /[&<>"']/g
 
 // 从 publicSettings 获取记录保留时间
 const maxPingRecordPreserveTime = computed(() => appStore.publicSettings?.ping_record_preserve_time || 168)
@@ -101,13 +105,6 @@ watch(availableViews, (views) => {
 
 // ==================== 类型定义 ====================
 
-interface PingRecord {
-  client: string
-  task_id: number
-  time: string
-  value: number
-}
-
 interface TaskInfo {
   id: number
   name: string
@@ -126,6 +123,7 @@ interface TaskInfo {
 
 // 数据状态
 const remoteData = shallowRef<PingRecord[]>([])
+const lossMetrics = shallowRef<PingLossMetricsResponse | null>(null)
 const tasks = shallowRef<TaskInfo[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -133,6 +131,8 @@ const error = ref<string | null>(null)
 // 任务选择
 const selectedTaskIds = ref<number[]>([])
 const cutPeak = ref(false)
+const chartMetric = ref<'latency' | 'loss'>('latency')
+const recordsUntil = ref(Date.now())
 const isTouchTooltipMode = ref(false)
 const activeTaskTooltipId = ref<number | null>(null)
 const smoothInfoTooltipOpen = ref(false)
@@ -175,20 +175,32 @@ function toggleSmoothInfoTooltip() {
 
 // ==================== 数据获取 ====================
 
+let recordFetchVersion = 0
+
 async function fetchRecords() {
   if (!props.uuid)
     return
 
   loading.value = true
   error.value = null
+  const version = ++recordFetchVersion
+  const until = Date.now()
+  const hours = selectedHours.value
 
   try {
-    const result = await getCompatiblePingRecords(props.uuid, selectedHours.value)
+    const [result, metrics] = await Promise.all([
+      getCompatiblePingRecords(props.uuid, hours),
+      getCompatiblePingLossMetrics(props.uuid, hours, until),
+    ])
+    if (version !== recordFetchVersion)
+      return
 
     const records = result?.records || []
     records.sort((a, b) => dayjs(a.time).valueOf() - dayjs(b.time).valueOf())
 
     remoteData.value = records
+    lossMetrics.value = metrics
+    recordsUntil.value = until
     tasks.value = result?.tasks || []
 
     if (tasks.value.length > 0 && selectedTaskIds.value.length === 0) {
@@ -196,13 +208,17 @@ async function fetchRecords() {
     }
   }
   catch (err) {
-    console.error('延迟数据加载失败', err)
-    error.value = '无法加载延迟数据，请稍后重试。'
+    if (version !== recordFetchVersion)
+      return
+    console.error('网络检测数据加载失败', err)
+    error.value = '无法加载网络检测数据，请稍后重试。'
     remoteData.value = []
+    lossMetrics.value = null
     tasks.value = []
   }
   finally {
-    loading.value = false
+    if (version === recordFetchVersion)
+      loading.value = false
   }
 }
 
@@ -297,6 +313,26 @@ const chartData = computed(() => {
   return data
 })
 
+const lossWindows = computed(() => lossMetrics.value
+  ? buildPingMetricLossWindows(lossMetrics.value.series, selectedHours.value, recordsUntil.value)
+  : buildPingLossWindows(remoteData.value, selectedHours.value, recordsUntil.value))
+const lossWindowMinutes = computed(() => (lossMetrics.value
+  ? getPingMetricLossWindowMs(lossMetrics.value.series, selectedHours.value)
+  : getPingLossWindowMs(selectedHours.value)) / 60_000)
+const lossSummary = computed(() => {
+  const totals = new Map<number, { failed: number, total: number }>()
+  for (const window of lossWindows.value) {
+    for (const [id, sample] of window.tasks) {
+      const total = totals.get(id) ?? { failed: 0, total: 0 }
+      total.failed += sample.failed
+      total.total += sample.total
+      totals.set(id, total)
+    }
+  }
+  return totals
+})
+const hasSelectedLossData = computed(() => lossWindows.value.some(window => selectedTaskIds.value.some(id => window.tasks.has(id))))
+
 // ==================== 工具函数 ====================
 
 function formatTime(time: string, showDate: boolean): string {
@@ -332,10 +368,11 @@ const latestValues = computed(() => {
     return []
 
   const latestMap = new Map<number, number | null>()
+  const recordedTaskIds = new Set(remoteData.value.filter(isValidLatencySample).map(record => record.task_id))
   for (const task of tasks.value) {
     for (let i = remoteData.value.length - 1; i >= 0; i--) {
       const rec = remoteData.value[i]
-      if (rec && rec.task_id === task.id && rec.value >= 0) {
+      if (rec && rec.task_id === task.id && isValidLatencySample(rec) && rec.value >= 0) {
         latestMap.set(task.id, rec.value)
         break
       }
@@ -344,9 +381,13 @@ const latestValues = computed(() => {
 
   return tasks.value.map((task, idx) => {
     const safeIdx = Math.max(0, idx % chartColors.length)
+    const loss = lossSummary.value.get(task.id)
     return {
       ...task,
+      loss: loss ? loss.failed / loss.total * 100 : null,
+      total: loss?.total ?? task.total,
       latestValue: latestMap.get(task.id) ?? null,
+      hasData: recordedTaskIds.has(task.id) || !!loss,
       color: chartColors[safeIdx]!,
     }
   })
@@ -408,17 +449,21 @@ const baseTooltipConfig = computed(() => ({
 
 const pingChartOption = computed(() => {
   const taskList = selectedTasks.value
-  const data = chartData.value
+  const isLoss = chartMetric.value === 'loss'
+  const data: Record<string, unknown>[] = isLoss
+    ? lossWindows.value.map(window => ({ time: window.time, ...Object.fromEntries(Array.from(window.tasks, ([id, sample]) => [id, sample.percent])) }))
+    : chartData.value
   const hours = selectedHours.value
 
   // 构建 series，确保颜色与卡片一致
   const series = taskList.map((task) => {
     const color = getTaskColor(task.id)
     return {
+      id: String(task.id),
       name: task.name,
       type: 'line' as const,
       data: data.map(d => d[task.id] as number | null ?? null),
-      smooth: cutPeak.value ? 0.6 : 0.1,
+      smooth: isLoss ? false : cutPeak.value ? 0.6 : 0.1,
       showSymbol: false,
       connectNulls: false,
       lineStyle: { width: 1.5, color, cap: 'round' as const },
@@ -443,7 +488,7 @@ const pingChartOption = computed(() => {
     tooltip: {
       ...baseTooltipConfig.value,
       formatter: (params: unknown) => {
-        const p = params as Array<{ seriesName: string, value: number | null, dataIndex: number }>
+        const p = params as Array<{ seriesId: string, seriesName: string, value: number | null, dataIndex: number }>
         if (!p.length)
           return ''
         const firstParam = p[0]
@@ -454,7 +499,10 @@ const pingChartOption = computed(() => {
           return ''
 
         const time = rowData.time as string
-        const timeStr = formatTimeForTooltip(time, hours)
+        const window = isLoss ? lossWindows.value[firstParam.dataIndex] : undefined
+        const timeStr = window
+          ? `${formatTimeForTooltip(window.time, hours)}–${formatTimeForTooltip(window.end, hours)}`
+          : formatTimeForTooltip(time, hours)
         let html = `<div style="font-weight:600;margin-bottom:6px;color:${chartThemeColors.value.textSecondary}">${timeStr}</div>`
         html += '<div style="display:flex;flex-direction:column;gap:4px">'
 
@@ -463,11 +511,13 @@ const pingChartOption = computed(() => {
 
         for (const item of sortedParams) {
           if (item.value !== null && item.value !== undefined) {
-            // 通过任务名找到对应的任务ID，再获取颜色
-            const task = tasks.value.find(t => t.name === item.seriesName)
+            const task = tasks.value.find(t => String(t.id) === item.seriesId)
             const color = task ? colorMap.get(task.id) || chartColors[0] : chartColors[0]
             const colorDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:8px;flex-shrink:0"></span>`
-            html += `<div style="display:flex;align-items:center">${colorDot}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.seriesName}</span><span style="margin-left:auto;font-weight:600;margin-left:16px;font-variant-numeric:tabular-nums">${Math.round(item.value)} ms</span></div>`
+            const name = item.seriesName.replace(TOOLTIP_ESCAPE_PATTERN, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[char]!)
+            const sample = task ? window?.tasks.get(task.id) : undefined
+            const value = isLoss ? `${item.value.toFixed(2)}%${sample ? `（${Math.round(sample.failed)}/${sample.total} ${lossMetrics.value ? '次失败' : '失败样本'}）` : ''}` : `${Math.round(item.value)} ms`
+            html += `<div style="display:flex;align-items:center">${colorDot}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span><span style="margin-left:auto;font-weight:600;margin-left:16px;font-variant-numeric:tabular-nums">${value}</span></div>`
           }
         }
         html += '</div>'
@@ -502,7 +552,9 @@ const pingChartOption = computed(() => {
     },
     yAxis: {
       type: 'value',
-      name: '延迟 (ms)',
+      name: isLoss ? '丢包率 (%)' : '延迟 (ms)',
+      min: isLoss ? 0 : undefined,
+      max: isLoss ? (value: { max: number }) => Math.min(100, Math.max(1, Math.ceil(value.max * 1.1))) : undefined,
       nameTextStyle: { color: chartThemeColors.value.textSecondary },
       axisLabel: { fontSize: 11, color: chartThemeColors.value.textSecondary, formatter: '{value}' },
       axisLine: { show: false },
@@ -547,6 +599,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  recordFetchVersion++
   coarsePointerMediaQuery?.removeEventListener('change', syncTouchTooltipMode)
 })
 </script>
@@ -590,7 +643,7 @@ onBeforeUnmount(() => {
         {{ error }}
       </div>
       <div v-else-if="tasks.length === 0 && !loading" class="py-8">
-        <Empty description="暂无延迟数据" />
+        <Empty description="暂无网络检测数据" />
       </div>
 
       <template v-else>
@@ -623,7 +676,10 @@ onBeforeUnmount(() => {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent class="!rounded p-3">
-                      <div class="text-xs gap-x-4 gap-y-1.5 grid grid-cols-4">
+                      <div v-if="!task.hasData" class="text-xs">
+                        此时间范围内暂无有效探测记录
+                      </div>
+                      <div v-else class="text-xs gap-x-4 gap-y-1.5 grid grid-cols-4">
                         <template v-if="task.min !== undefined">
                           <span class="text-muted-foreground">最小</span>
                           <span class="font-medium">{{ Math.round(task.min) }} ms</span>
@@ -671,11 +727,11 @@ onBeforeUnmount(() => {
               </TooltipProvider>
               <div class="text-xs mt-1 flex gap-1.5 items-center text-muted-foreground">
                 <span class="font-medium" title="平均延迟">
-                  {{ task.avg !== undefined ? `${Math.round(task.avg)}ms` : '-' }}
+                  {{ task.latestValue !== null && task.avg !== undefined ? `${Math.round(task.avg)}ms` : '—' }}
                 </span>
                 <span class="opacity-60">·</span>
-                <span title="丢包率">{{ task.loss.toFixed(2) }}%</span>
-                <template v-if="task.p99_p50_ratio !== undefined">
+                <span :title="lossMetrics ? '探测失败比例' : '返回样本的失败比例（估算）'">{{ task.loss !== null ? `${task.loss.toFixed(2)}%` : '—' }}</span>
+                <template v-if="task.hasData && task.p99_p50_ratio !== undefined">
                   <span class="opacity-60">·</span>
                   <span title="波动率">{{ task.p99_p50_ratio.toFixed(2) }}</span>
                 </template>
@@ -684,9 +740,19 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 平滑峰值开关 -->
+        <!-- 图表指标与延迟平滑开关 -->
         <div class="flex flex-wrap gap-4 items-center py-2 justify-between">
-          <TooltipProvider>
+          <Tabs v-model="chartMetric">
+            <TabsList aria-label="网络检测图表指标" class="h-8 bg-background/50 rounded-md">
+              <TabsTrigger value="latency" class="h-7 text-xs border-none data-[state=active]:text-green-600 shadow-none rounded-sm">
+                延迟
+              </TabsTrigger>
+              <TabsTrigger value="loss" class="h-7 text-xs border-none data-[state=active]:text-green-600 shadow-none rounded-sm">
+                丢包
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <TooltipProvider v-if="chartMetric === 'latency'">
             <div class="flex gap-2 items-center">
               <Button
                 variant="ghost" size="xs" class="h-7 rounded-sm bg-background/50 hover:bg-background border-none"
@@ -711,9 +777,22 @@ onBeforeUnmount(() => {
           </TooltipProvider>
         </div>
 
+        <p v-if="chartMetric === 'loss'" class="text-xs text-muted-foreground">
+          <template v-if="lossMetrics">
+            每 {{ lossWindowMinutes }} 分钟按探测次数加权统计，边缘包含该时间桶的已有记录。
+          </template>
+          <template v-else>
+            旧版接口：每 {{ lossWindowMinutes }} 分钟按返回样本估算，降采样可能遗漏短时失败。
+          </template>
+          空缺不计作成功，不插值或平滑。此指标反映监控探测失败，不等同于全部业务流量的丢包率。
+        </p>
+
         <!-- 图表 -->
         <div class="h-80 bg-background/50 p-4 rounded-md">
-          <VChart :option="pingChartOption" autoresize />
+          <div v-if="chartMetric === 'loss' && !hasSelectedLossData" class="h-full flex items-center justify-center">
+            <Empty :description="selectedTaskIds.length ? '此时间范围内暂无有效探测记录' : '请选择检测任务'" />
+          </div>
+          <VChart v-else :key="chartMetric" :option="pingChartOption" autoresize />
         </div>
       </template>
     </Spinner>

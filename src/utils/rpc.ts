@@ -207,6 +207,25 @@ export interface PingRecord {
   value: number
 }
 
+/** Official ping.loss values are ratios (0–1), weighted by the underlying probe count. */
+export interface PingLossMetricSeries {
+  metric_key: string
+  entity_id: string
+  tags?: Record<string, string>
+  downsampled?: boolean
+  interval_seconds?: number
+  points: {
+    time: string
+    value: number | null
+    count?: number
+    tags?: Record<string, string>
+  }[]
+}
+
+export interface PingLossMetricsResponse {
+  series: PingLossMetricSeries[]
+}
+
 /** RPC 错误 */
 export class RpcError extends Error {
   code: number

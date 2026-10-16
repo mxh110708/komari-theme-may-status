@@ -5,8 +5,9 @@
  * RPC2 不可用或返回结构异常时，自动回退到官方保留的 REST 接口。
  */
 import type { LoadRecord as ApiLoadRecord, PingRecord as ApiPingRecord, PingTask as ApiPingTask } from '@/utils/api'
-import type { Client, NodeStatus, PingRecord, StatusRecord } from '@/utils/rpc'
+import type { Client, NodeStatus, PingLossMetricsResponse, PingRecord, StatusRecord } from '@/utils/rpc'
 import { getSharedApi } from '@/utils/api'
+import { getPingLossWindowMs } from '@/utils/pingChartHelper'
 import { getSharedRpc } from '@/utils/rpc'
 
 export interface CompatiblePingTask extends ApiPingTask {
@@ -32,6 +33,7 @@ const RPC_RETRY_INTERVAL_MS = 60_000
 let nodeRpcRetryAt = 0
 let loadRpcRetryAt = 0
 let pingRpcRetryAt = 0
+let pingLossMetricRetryAt = 0
 
 interface CompatibleRecentRecord {
   uuid?: string
@@ -311,4 +313,40 @@ export async function getCompatiblePingRecords(
   }
 
   return getRestPingRecords(uuid, hours)
+}
+
+/** Retained latency records can be sampled; only ping.loss preserves failures in historical buckets. */
+export async function getCompatiblePingLossMetrics(
+  uuid: string,
+  hours: number,
+  until: number,
+): Promise<PingLossMetricsResponse | null> {
+  if (Date.now() < pingLossMetricRetryAt)
+    return null
+
+  const step = getPingLossWindowMs(hours)
+  const start = Math.floor((until - hours * 3_600_000) / step) * step
+  try {
+    const result = await getSharedRpc().getClient().call<PingLossMetricsResponse>(
+      'public:queryMetrics',
+      {
+        metric_keys: ['ping.loss'],
+        entity_ids: [uuid],
+        start: new Date(start).toISOString(),
+        end: new Date(until).toISOString(),
+        max_points: Math.ceil((until - start) / step),
+        aggregation: 'avg',
+        fill_empty: true,
+      },
+    )
+    if (!Array.isArray(result?.series))
+      throw new TypeError('Invalid ping.loss response')
+    pingLossMetricRetryAt = 0
+    return { series: result.series.filter(series => series.metric_key === 'ping.loss' && series.entity_id === uuid && Array.isArray(series.points)) }
+  }
+  catch (error) {
+    pingLossMetricRetryAt = Date.now() + RPC_RETRY_INTERVAL_MS
+    console.warn('[KomariCompat] 分时丢包指标不可用，详情页将明确标注样本估算。', error)
+    return null
+  }
 }
