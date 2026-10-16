@@ -14,6 +14,7 @@ import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { getCompatibleLoadRecords } from '@/utils/compat'
 import { formatBytes, formatBytesSplit } from '@/utils/helper'
+import { getSystemLoadAxisMaximum } from '@/utils/loadChartHelper'
 import { fillMissingTimePoints } from '@/utils/recordHelper'
 import { getSharedRpc } from '@/utils/rpc'
 import '@/utils/echarts' // 共享 ECharts 配置
@@ -340,6 +341,11 @@ const baseYAxisConfig = computed(() => ({
 
 // ==================== 图表配置 ====================
 
+const cpuAxisColors = computed(() => ({
+  cpu: isDark.value ? chartColors.primary : '#B83232',
+  load: isDark.value ? chartColors.secondary : '#915500',
+}))
+
 // CPU 图表
 const cpuChartOption = computed(() => ({
   animation: false,
@@ -347,8 +353,9 @@ const cpuChartOption = computed(() => ({
   color: [chartColors.primary, chartColors.secondary],
   tooltip: {
     ...baseTooltipConfig.value,
+    axisPointer: { ...baseTooltipConfig.value.axisPointer, type: 'line' as const },
     formatter: (params: unknown) => {
-      const p = params as Array<{ dataIndex: number, seriesName: string, value: number, color: string }>
+      const p = params as Array<{ dataIndex: number, seriesName: string, value: number | null, color: string }>
       if (!p.length)
         return ''
       const firstParam = p[0]
@@ -365,32 +372,45 @@ const cpuChartOption = computed(() => ({
       for (const item of p) {
         const colorDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${item.color};margin-right:8px;flex-shrink:0"></span>`
         if (item.seriesName === 'CPU') {
-          html += `<div style="display:flex;align-items:center">${colorDot}<span>CPU</span><span style="margin-left:auto;font-weight:600;margin-left:16px">${item.value?.toFixed(1) ?? '-'}%</span></div>`
+          html += `<div style="display:flex;align-items:center">${colorDot}<span>CPU 使用率（左轴）</span><span style="margin-left:auto;font-weight:600;margin-left:16px">${item.value == null ? '—' : `${item.value.toFixed(1)}%`}</span></div>`
         }
         else if (item.seriesName === '负载') {
-          html += `<div style="display:flex;align-items:center">${colorDot}<span>系统负载</span><span style="margin-left:auto;font-weight:600;margin-left:16px">${item.value?.toFixed(2) ?? '-'}</span></div>`
+          html += `<div style="display:flex;align-items:center">${colorDot}<span>系统负载（右轴）</span><span style="margin-left:auto;font-weight:600;margin-left:16px">${item.value?.toFixed(2) ?? '—'}</span></div>`
         }
       }
       html += '</div>'
       return html
     },
   },
-  grid: chartMargin,
+  legend: {
+    bottom: 0,
+    itemWidth: 10,
+    itemHeight: 10,
+    icon: 'roundRect',
+    textStyle: { fontSize: 10, color: chartThemeColors.value.textSecondary },
+    data: ['CPU', '负载'],
+    formatter: (name: string) => name === 'CPU' ? 'CPU · 左轴 %' : '负载 · 右轴',
+  },
+  grid: { ...chartMarginWithLegend, right: 48 },
   xAxis: baseXAxisConfig.value,
   yAxis: [
     {
       ...baseYAxisConfig.value,
-      name: 'CPU %',
-      nameTextStyle: { color: chartThemeColors.value.textSecondary, padding: [0, 40, 0, 0] },
+      name: 'CPU（%）',
+      nameTextStyle: { color: cpuAxisColors.value.cpu, padding: [0, 40, 0, 0] },
       min: 0,
       max: 100,
-      axisLabel: { ...baseYAxisConfig.value.axisLabel, formatter: '{value}%' },
+      axisLabel: { ...baseYAxisConfig.value.axisLabel, color: cpuAxisColors.value.cpu, formatter: '{value}%' },
+      axisPointer: { show: false },
     },
     {
       ...baseYAxisConfig.value,
-      name: '负载',
-      nameTextStyle: { color: chartThemeColors.value.textSecondary, padding: [0, 0, 0, 40] },
+      name: '系统负载',
+      nameTextStyle: { color: cpuAxisColors.value.load, padding: [0, 0, 0, 40] },
       min: 0,
+      max: (value: { max: number }) => getSystemLoadAxisMaximum(value.max, nodeInfo.value?.cpu_cores),
+      axisLabel: { ...baseYAxisConfig.value.axisLabel, color: cpuAxisColors.value.load },
+      axisPointer: { show: false },
       splitLine: { show: false },
     },
   ],
@@ -853,7 +873,7 @@ onMounted(() => {
         <CardX size="small" class="bg-background/50 border-none hover:bg-background transition-all rounded-md">
           <template #header>
             <div class="flex items-center justify-between">
-              <span class="text-base font-bold">CPU</span>
+              <span class="text-base font-bold">CPU 与负载</span>
               <div v-if="latestStatus?.cpu != null" class="text-xs flex gap-0.5 items-baseline">
                 <span>{{ latestStatus.cpu.toFixed(1) }}</span>
                 <span>%</span>
@@ -864,6 +884,9 @@ onMounted(() => {
           <div class="h-48">
             <VChart :option="cpuChartOption" autoresize />
           </div>
+          <p class="mt-1 text-[10px] text-muted-foreground">
+            左轴为 CPU 使用率；右轴为系统负载，不是百分比。
+          </p>
         </CardX>
 
         <!-- 内存卡片 -->
