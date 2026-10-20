@@ -37,5 +37,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mxh-status-${{ runner.os }}-${{ github.sha }}
-          path: komari-theme-mxh-status-build-*.zip
+          path: komari-theme-may-status-build-*.zip
           if-no-files-found: error

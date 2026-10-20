@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "komari-theme-mxh-status",
+      "name": "komari-theme-may-status",
       "dependencies": {
         "@iconify/vue": "^4.3.0",
         "@vueuse/core": "^14.2.1",

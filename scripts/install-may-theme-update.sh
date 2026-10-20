@@ -202,8 +202,14 @@ with zipfile.ZipFile(archive_path) as archive:
 # manifest name. Override only that heading in the currently embedded asset;
 # keep the ID, all form behavior and the embedded login frontend unchanged.
 def brand_managed_title(source, theme_short):
-    marker = "/* MXH Status managed-title compatibility */"
-    condition = json.dumps(theme_short) + '?"MXH Status 外观":'
+    marker = "/* May Status managed-title compatibility */"
+    condition = json.dumps(theme_short) + '?"May Status 外观":'
+    legacy_marker = "/* MXH Status managed-title compatibility */"
+    if legacy_marker in source:
+        legacy_condition = json.dumps(theme_short) + '?"MXH Status 外观":'
+        if source.count(legacy_condition) != 2:
+            raise ValueError("Existing legacy managed-title override is invalid")
+        source = source.replace(legacy_marker, marker).replace(legacy_condition, condition)
     if marker in source:
         if source.count(condition) != 2:
             raise ValueError("Existing managed-title override is invalid")
@@ -417,6 +423,10 @@ try:
         "ON CONFLICT(short) DO UPDATE SET data=excluded.data",
         (theme, json.dumps(settings, ensure_ascii=False, separators=(",", ":"))),
     )
+    # Rebrand only the previous project title; never overwrite a custom site name.
+    site_row = connection.execute("SELECT value FROM configs WHERE key = 'sitename'").fetchone()
+    if site_row and json.loads(site_row[0]) == "MXH Status":
+        connection.execute("UPDATE configs SET value = ? WHERE key = 'sitename'", (json.dumps("May Status"),))
     connection.commit()
 except Exception:
     connection.rollback()
@@ -444,11 +454,11 @@ database, expected_short, expected_version, expected_order, snapshot_path = sys.
 manifest = json.loads((theme_dir / "komari-theme.json").read_text(encoding="utf-8"))
 if manifest.get("short") != expected_short or manifest.get("version") != expected_version:
     raise SystemExit("Installed manifest does not match the release")
-if manifest.get("name") != "MXH Status" or manifest.get("configuration", {}).get("name") != "MXH Status 外观":
+if manifest.get("name") != "May Status" or manifest.get("configuration", {}).get("name") != "May Status 外观":
     raise SystemExit("Installed theme branding is inconsistent")
 managed_overrides = [
     path for path in (theme_dir / "dist/assets").glob("chunk-theme_managed-*.js")
-    if "/* MXH Status managed-title compatibility */" in path.read_text(encoding="utf-8")
+    if "/* May Status managed-title compatibility */" in path.read_text(encoding="utf-8")
 ]
 if len(managed_overrides) != 1:
     raise SystemExit("Managed-page title override is missing or ambiguous")
@@ -608,7 +618,7 @@ print("SEVEN_DAY_PRESET=ok")
 print("CUSTOM_SITE_ICON=ok")
 print("LOCAL_ICON_UPLOAD_LINK=ok")
 print("MANAGED_UI_MIGRATION=ok")
-print("MANAGED_TITLE=MXH Status 外观")
+print("MANAGED_TITLE=May Status 外观")
 print("GEOGRAPHIC_LATENCY_RATING=ok")
 print("HISTORY_API=" + history_api_status)
 PY

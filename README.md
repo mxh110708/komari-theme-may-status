@@ -1,13 +1,13 @@
-# MXH Status
+# May Status
 
 面向中文监控场景的 Komari 主题，由 [mxh110708](https://github.com/mxh110708) 维护。
 
-MXH Status 延续毛玻璃界面，在此基础上完善中文文案、后台外观设置、历史数据兼容性与网络质量展示。重点是清晰呈现真实监控数据，而不是改变检测结果或掩盖线路问题。
+May Status 延续毛玻璃界面，在此基础上完善中文文案、后台外观设置、历史数据兼容性与网络质量展示。重点是清晰呈现真实监控数据，而不是改变检测结果或掩盖线路问题。
 
 ## 主要功能
 
 - **中文界面**：普通标签、选项和说明使用规范中文；保留 HTTP、WebSocket、IPv4、IPv6 等技术名称。
-- **统一外观设置**：在 Komari 后台的「MXH Status 外观」入口配置主题模式、数据刷新、首页模块、节点卡片和背景。
+- **统一外观设置**：在 Komari 后台的「May Status 外观」入口配置主题模式、数据刷新、首页模块、节点卡片和背景。
 - **可配置总览**：选择总览指标、排列顺序和快捷筛选项，支持卡片与列表视图及自定义节点顺序。
 - **真实网络历史**：按运营商与 IP 协议展示延迟和探测失败比例；缺少记录时显示无数据，不补造样本。
 - **地理距离评级**：同地区、同检测目标使用同一公式，不因某台服务器长期绕路而放宽标准。
@@ -33,20 +33,20 @@ MXH Status 延续毛玻璃界面，在此基础上完善中文文案、后台外
 
 数据来源、兼容边界与验证见 [丢包图表修复记录](docs/PING-LOSS-2026-10-16.zh-CN.md)。
 
-算法、坐标覆盖范围及高级配置见 [实现说明](./MXH-CUSTOM.md#geographical-latency-ratings-222-mxh8)。
+算法、坐标覆盖范围及高级配置见 [实现说明](./May-CUSTOM.md#geographical-latency-ratings-222-mxh8)。
 
 ## 安装与更新
 
-1. 从本仓库的 [Releases](https://github.com/mxh110708/komari-theme-mxh-status/releases) 下载 `komari-theme-mxh-status-build-*.zip`。
+1. 从本仓库的 [Releases](https://github.com/mxh110708/komari-theme-may-status/releases) 下载 `komari-theme-may-status-build-*.zip`。
 2. 登录 Komari 后台，进入「主题 → 主题管理」。
 3. 首次安装时上传主题并设为当前主题；更新已有主题时使用更新入口上传新包。
-4. 打开「MXH Status 外观」检查设置，刷新前台页面。
+4. 打开「May Status 外观」检查设置，刷新前台页面。
 
 不要解压后重新打包，也不要将整个源码压缩包作为主题上传。发布包包含主题清单、预览图和构建后的前端文件。
 
-原毛玻璃增强版的内部标识 `GlassmorphismEnhanced` 保持不变，以便沿用已保存的外观设置。项目名称、主题展示名称和发布包名称已改为 MXH Status。
+原毛玻璃增强版的内部标识 `GlassmorphismEnhanced` 保持不变，以便沿用已保存的外观设置。项目名称、主题展示名称和发布包名称已改为 May Status。
 
-仓库提供的 [维护安装脚本](./scripts/install-mxh-theme-update.sh) 适用于既有的 systemd 主控部署：校验包摘要、创建服务器本地备份、保留原设置，并为内置后台顶部标题添加兼容适配。它依赖特定部署路径，执行前应检查环境；不适用于直接复制到任意 Docker 部署中运行。
+仓库提供的 [维护安装脚本](./scripts/install-may-theme-update.sh) 适用于既有的 systemd 主控部署：校验包摘要、创建服务器本地备份、保留原设置，并为内置后台顶部标题添加兼容适配。它依赖特定部署路径，执行前应检查环境；不适用于直接复制到任意 Docker 部署中运行。
 
 ## 使用注意
 
@@ -81,7 +81,7 @@ bun run check:package
 bun run test:package
 ```
 
-构建输出为 `dist/` 和 `komari-theme-mxh-status-build-<commit>.zip`。生产预览可使用 `bun run preview`。
+构建输出为 `dist/` 和 `komari-theme-may-status-build-<commit>.zip`。生产预览可使用 `bun run preview`。
 
 构建必须包含 `public/registerSW.js` 与 `public/sw.js` 的原始字节：它们停止旧 PWA 导航兜底把 `/admin` 错误导向公开主题，Worker 不拦截网络请求。更新既有浏览器 Worker 取决于浏览器更新周期；本项目不强制刷新或清理用户缓存。`check:package` 检查版本、主题身份、必需资源和网络模式行为，不代表完整浏览器验收。
 
@@ -93,17 +93,17 @@ bun run test:package
 
 ## 反馈与安全
 
-通过本仓库的 [Issues](https://github.com/mxh110708/komari-theme-mxh-status/issues) 提交问题。请说明主控与主题版本、浏览器、复现步骤，以及经过脱敏的截图。
+通过本仓库的 [Issues](https://github.com/mxh110708/komari-theme-may-status/issues) 提交问题。请说明主控与主题版本、浏览器、复现步骤，以及经过脱敏的截图。
 
 不要提交节点 Token、管理员密码、私钥、数据库、备份、Cloudflare Tunnel Token 或完整私有配置。公开示例不应包含真实节点地址或标识。
 
 ## 上游来源与许可
 
-MXH Status 是独立维护的衍生主题，不是 Komari 官方主题。感谢原项目的设计与实现：
+May Status 是独立维护的衍生主题，不是 Komari 官方主题。感谢原项目的设计与实现：
 
 - [Komari Monitor](https://github.com/komari-monitor/komari)
 - [Glassmorphism Enhanced · jianmomo](https://github.com/jianmomo/komari-theme-Glassmorphism-Enhanced)
 - [Glassmorphism · sanrokamlan](https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism)
 - Komari Emerald 原始主题，以及 [Komari Naive · Tony Liu](https://github.com/tonyliuzj/komari-naive)
 
-本项目采用 [MIT 许可证](./LICENSE)，保留上游版权声明，并记录 MXH Status 的修改版权。
+本项目采用 [MIT 许可证](./LICENSE)，保留上游版权声明，并记录 May Status 的修改版权。

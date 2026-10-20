@@ -4,7 +4,7 @@
 
 ## 已确认的差异
 
-[正式 v2.2.2-mxh.9](https://github.com/mxh110708/komari-theme-mxh-status/releases/tag/v2.2.2-mxh.9) 附件下载摘要与 GitHub 公开 digest 一致。它含 333 项文件，本地原包含 335 项；正式包缺少 `dist/registerSW.js`、`dist/sw.js`。两包还有其他构建资源差异，不能说只差这两项。
+[正式 v2.2.2-mxh.9](https://github.com/mxh110708/komari-theme-may-status/releases/tag/v2.2.2-mxh.9) 附件下载摘要与 GitHub 公开 digest 一致。它含 333 项文件，本地原包含 335 项；正式包缺少 `dist/registerSW.js`、`dist/sw.js`。两包还有其他构建资源差异，不能说只差这两项。
 
 | 包        | 字节数    | SHA-256                                                            |
 | --------- | --------- | ------------------------------------------------------------------ |

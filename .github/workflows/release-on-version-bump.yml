@@ -139,4 +139,4 @@ jobs:
           overwrite_files: false
           fail_on_unmatched_files: true
           files: |
-            komari-theme-mxh-status-build*.zip
+            komari-theme-may-status-build*.zip
