@@ -121,7 +121,7 @@ the Komari theme manager.
 
 The project is named `komari-theme-may-status`. The manifest, package metadata,
 footer, repository links and build artifacts use the May Status identity.
-The MIT license retains all upstream copyright notices and adds the MXH changes.
+The MIT license retains all upstream copyright notices and adds the May changes.
 
 The internal `GlassmorphismEnhanced` identifier remains unchanged so existing
 theme selections and saved preferences do not need a destructive migration.

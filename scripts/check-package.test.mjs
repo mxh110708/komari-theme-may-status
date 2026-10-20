@@ -9,7 +9,7 @@ import { checkPackage, checkPwaContract } from './check-package.mjs'
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'public')
 
 async function fixture(callback) {
-  const root = mkdtempSync(join(tmpdir(), 'mxh-package-contract-'))
+  const root = mkdtempSync(join(tmpdir(), 'may-package-contract-'))
   try {
     for (const directory of ['public', 'dist', 'docs']) {
       mkdirSync(join(root, directory))
